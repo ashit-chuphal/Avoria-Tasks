@@ -24,7 +24,9 @@
 ### - What you improved
 1. I have used Github secrets to add the AWS IAM ID and Secret which helps to login to ecr and perform necessary AWS tasks to push the builds to ecr and then to ecs.
 
-- What risks you found
+### - What risks you found
+1. That the secrets were hardcoded into the yaml file which are supposed to be used as environment variables or secrets using github secrets to run the actions or workflows.
+
 
 
 - What you would prioritize in the first 30 days
