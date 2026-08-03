@@ -22,7 +22,7 @@
 2. I have also used task definitions to use the current task definition while running each time and rendering the same ecr task definition
 
 ### - What you improved
-1. I have used Github secrets to add the AWS IAM ID and Secret which helps to login to ecr and perform necessary AWS tasks to push the builds to ecr and then to ecs
+1. I have used Github secrets to add the AWS IAM ID and Secret which helps to login to ecr and perform necessary AWS tasks to push the builds to ecr and then to ecs.
 
 - What risks you found
 
