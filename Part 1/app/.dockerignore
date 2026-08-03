@@ -1,0 +1,4 @@
+# Candidate should review and improve if needed
+node_modules
+npm-debug.log
+.git

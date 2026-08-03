@@ -1,0 +1,9 @@
+Asset ID,Type,Assigned To,Status,OS,Last Checked,Notes
+LAP-001,Laptop,Martin Becker,Active,Windows 11,2026-06-10,BitLocker enabled
+LAP-002,Laptop,Former Employee,Unknown,Windows 10,2025-12-01,Account may still be active
+SRV-001,Server,IT Team,Active,Ubuntu 22.04,2026-04-15,Backup status not confirmed
+FW-001,Firewall,IT Team,Active,N/A,2026-01-20,Rule open to 0.0.0.0/0 needs review
+NAS-001,Storage,IT Team,Active,N/A,2026-03-01,Backup target configured but not recently tested
+PHN-001,Mobile Phone,Unassigned,In Storage,iOS,2026-02-12,No MDM record found
+
+
