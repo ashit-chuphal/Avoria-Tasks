@@ -11,13 +11,13 @@ on:
 permissions:
   contents: read
 
-env:
-  AWS_REGION: us-east-1
-  AWS_ACCOUNT_ID: "670839969318"
-  ECR_REPOSITORY: interview-app-backend
-  ECS_CLUSTER: interview-appCluster
-  ECS_SERVICE: interview-app-backend-service
-  CONTAINER_NAME: backend
+# To improve cicd we can implement to use environment variables for AWS credentials and other sensitive information. This will help to avoid hardcoding sensitive data in the workflow file and improve security.
+# env:
+#   AWS_REGION: us-east-1
+#   AWS_ACCOUNT_ID: "670839969318"
+#   ECR_REPOSITORY: interview-app-backend
+#   ECS_CLUSTER: interview-appCluster
+#   CONTAINER_NAME: backend
 
 jobs:
   deploy:
@@ -32,7 +32,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: us-east-1
 
       - name: Ensure ECR repository exists
         run: |
@@ -46,69 +46,30 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push Docker image
-        id: build-image
-        env:
-          ECR_REGISTRY: ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Push image to ECR
         run: |
-          IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          docker tag interview-app:latest 670839969318.dkr.ecr.us-east-1.amazonaws.com/interview-app-backend: ${{ github.sha }}
+          docker push 670839969318.dkr.ecr.us-east-1.amazonaws.com/interview-app-backend: ${{ github.sha }}
 
-          docker build \
-            --file ./server/app/Dockerfile \
-            --tag "$IMAGE_URI" \
-            ./server/app
-
-          docker push "$IMAGE_URI"
-
-          echo "image=$IMAGE_URI" >> "$GITHUB_OUTPUT"
-
-      - name: Get current task definition
-        id: current-task-def
-        run: |
-          CURRENT_TASK_DEF=$(aws ecs describe-services \
-            --cluster "$ECS_CLUSTER" \
-            --services "$ECS_SERVICE" \
-            --query "services[0].taskDefinition" \
-            --output text)
-          
-          if [ -z "$CURRENT_TASK_DEF" ] || [ "$CURRENT_TASK_DEF" = "None" ]; then
-            echo "No task definition attached to $ECS_SERVICE"
-            exit 1
-          fi
-          
-          echo "Current task definition: $CURRENT_TASK_DEF"
-          echo "task_definition=$CURRENT_TASK_DEF" >> "$GITHUB_OUTPUT"
-      
-      - name: Download current task definition
+      - name: Download Current Task Definition
         run: |
           aws ecs describe-task-definition \
-            --task-definition "${{ steps.current-task-def.outputs.task_definition }}" \
+            --task-definition interview-app-backend \
             --query taskDefinition \
             > task-definition.json
-      
-          echo "Downloaded task definition:"
-          jq '{
-            family,
-            revision,
-            containers: [.containerDefinitions[] | {
-              name,
-              image
-            }]
-          }' task-definition.json
-      
-      - name: Render new task definition
-        id: render-task-def
+
+      - name: Render New Task Definition
+        id: task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: task-definition.json
-          container-name: ${{ env.CONTAINER_NAME }}
-          image: ${{ steps.build-image.outputs.image }}
-        
-      - name: Deploy new task definition
+          container-name: backend
+          image: 670839969318.dkr.ecr.us-east-1.amazonaws.com/interview-app-backend:${{ github.sha }}
+
+      - name: Deploy Backend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
-          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
-          cluster: ${{ env.ECS_CLUSTER }}
-          service: ${{ env.ECS_SERVICE }}
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: interview-app-backend
+          cluster: interview-appCluster
           wait-for-service-stability: true
