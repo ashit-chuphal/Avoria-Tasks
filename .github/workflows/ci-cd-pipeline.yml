@@ -35,6 +35,11 @@ jobs:
           docker tag interview-app:latest 670839969318.dkr.ecr.us-east-1.amazonaws.com/interview-app-backend:${{ github.sha }}
           docker push 670839969318.dkr.ecr.us-east-1.amazonaws.com/interview-app-backend:${{ github.sha }}
 
+      - name: Ensure ECR repository exists
+        run: |
+          aws ecr describe-repositories --repository-names interview-app-backend \
+            || aws ecr create-repository --repository-name interview-app-backend
+
       - name: Download Current Task Definition
         run: |
           aws ecs describe-task-definition \
@@ -57,4 +62,3 @@ jobs:
           service: interview-app-backend-service
           cluster: interview-appCluster
           wait-for-service-stability: true
-          
