@@ -17,7 +17,7 @@ env:
   ECS_CLUSTER: interview-appCluster
   ECS_SERVICE: interview-app-backend
   ECS_TASK_FAMILY: interview-app-backend
-  CONTAINER_NAME: interview-app
+  CONTAINER_NAME: Main
 
   CONTAINER_PORT: "3000"
 
