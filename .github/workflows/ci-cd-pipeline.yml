@@ -37,6 +37,10 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Build Docker image
+        run: |
+          docker build -t interview-app:latest ./server/app    
+      
       - name: Push image to ECR
         run: |
           docker tag interview-app:latest 670839969318.dkr.ecr.us-east-1.amazonaws.com/interview-app-backend:${{ github.sha }}
