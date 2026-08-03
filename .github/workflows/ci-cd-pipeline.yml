@@ -7,58 +7,95 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: "670839969318"
+  ECR_REPOSITORY: interview-app-backend
+  ECS_CLUSTER: interview-appCluster
+  ECS_SERVICE: interview-app-backend-service
+  CONTAINER_NAME: backend
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
-      
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-      
-      - name: Login to Amazon ECR
-        run: |
-          aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 670839969318.dkr.ecr.us-east-1.amazonaws.com
-
-      - name: Build Docker image
-        run: |
-          docker build -t interview-app ./server/app
-
-      - name: Push image to ECR
-        run: |
-          docker tag interview-app:latest 670839969318.dkr.ecr.us-east-1.amazonaws.com/interview-app-backend:${{ github.sha }}
-          docker push 670839969318.dkr.ecr.us-east-1.amazonaws.com/interview-app-backend:${{ github.sha }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Ensure ECR repository exists
         run: |
-          aws ecr describe-repositories --repository-names interview-app-backend \
-            || aws ecr create-repository --repository-name interview-app-backend
+          aws ecr describe-repositories \
+            --repository-names "$ECR_REPOSITORY" \
+            >/dev/null 2>&1 || \
+          aws ecr create-repository \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-scanning-configuration scanOnPush=true
 
-      - name: Download Current Task Definition
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+          IMAGE_TAG: ${{ github.sha }}
         run: |
+          IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+          docker build \
+            --file ./server/app/Dockerfile \
+            --tag "$IMAGE_URI" \
+            ./server/app
+
+          docker push "$IMAGE_URI"
+
+          echo "image=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+      - name: Get current ECS task definition
+        id: current-task
+        run: |
+          TASK_DEFINITION_ARN=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --query "services[0].taskDefinition" \
+            --output text)
+
+          if [ -z "$TASK_DEFINITION_ARN" ] || \
+             [ "$TASK_DEFINITION_ARN" = "None" ]; then
+            echo "No task definition found for ECS service $ECS_SERVICE"
+            exit 1
+          fi
+
+          echo "Current task definition: $TASK_DEFINITION_ARN"
+
           aws ecs describe-task-definition \
-            --task-definition interview-app-backend \
+            --task-definition "$TASK_DEFINITION_ARN" \
             --query taskDefinition \
             > task-definition.json
 
-      - name: Render New Task Definition
+      - name: Render new task definition
         id: task-def
-        uses: aws-actions/amazon-ecs-render-task-definition@v1.0.0
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: task-definition.json
-          container-name: backend
-          image: 670839969318.dkr.ecr.us-east-1.amazonaws.com/interview-app-backend:${{ github.sha }}
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.build-image.outputs.image }}
 
-      - name: Deploy Backend to ECS
+      - name: Deploy backend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.task-def.outputs.task-definition }}
-          service: interview-app-backend-service
-          cluster: interview-appCluster
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
