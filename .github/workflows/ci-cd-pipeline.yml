@@ -32,8 +32,8 @@ jobs:
 
       - name: Push image to ECR
         run: |
-          docker tag interview-app:latest 670839969318.dkr.ecr.us-east-1.amazonaws.com/interview-app-backend: ${{ github.sha }}
-          docker push 670839969318.dkr.ecr.us-east-1.amazonaws.com/interview-app-backend: ${{ github.sha }}
+          docker tag interview-app:latest 670839969318.dkr.ecr.us-east-1.amazonaws.com/interview-app-backend:${{ github.sha }}
+          docker push 670839969318.dkr.ecr.us-east-1.amazonaws.com/interview-app-backend:${{ github.sha }}
 
       - name: Download Current Task Definition
         run: |
