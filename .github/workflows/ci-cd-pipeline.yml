@@ -10,17 +10,21 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
+      
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Configure AWS credentials - bad example
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
+      
+      - name: Login to Amazon ECR
+        run: |
+          aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 670839969318.dkr.ecr.us-east-1.amazonaws.com
 
       - name: Build Docker image
         run: |
@@ -28,10 +32,29 @@ jobs:
 
       - name: Push image to ECR
         run: |
-          docker tag interview-app:latest 123456789012.dkr.ecr.eu-central-1.amazonaws.com/interview-app:latest
-          docker push 123456789012.dkr.ecr.eu-central-1.amazonaws.com/interview-app:latest
+          docker tag interview-app:latest 670839969318.dkr.ecr.us-east-1.amazonaws.com/interview-app-backend: ${{ github.sha }}
+          docker push 670839969318.dkr.ecr.us-east-1.amazonaws.com/interview-app-backend: ${{ github.sha }}
 
-      - name: Deploy
+      - name: Download Current Task Definition
         run: |
-          echo "Deploying..."
-          # Missing real deployment command and health check
+          aws ecs describe-task-definition \
+            --task-definition interview-app-backend \
+            --query taskDefinition \
+            > task-definition.json
+
+      - name: Render New Task Definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: backend
+          image: 670839969318.dkr.ecr.us-east-1.amazonaws.com/interview-app-backend:${{ github.sha }}
+
+      - name: Deploy Backend to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: interview-app-backend-service
+          cluster: interview-appCluster
+          wait-for-service-stability: true
+          
