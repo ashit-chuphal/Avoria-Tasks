@@ -23,6 +23,8 @@
 
 ### - What you improved
 1. I have used Github secrets to add the AWS IAM ID and Secret which helps to login to ecr and perform necessary AWS tasks to push the builds to ecr and then to ecs.
+2. I made use for Chatgpt to ensure that we use environment variables instead of hardcoding the basic necessary variables. Helps you keep consistency and improves reusability.
+3. I also used chatgpt to improve the ci-cd-pipeline to use correct task definitions while pushing to ECS.
 
 ### - What risks you found
 1. That the secrets were hardcoded into the yaml file which are supposed to be used as environment variables or secrets using github secrets to run the actions or workflows.
