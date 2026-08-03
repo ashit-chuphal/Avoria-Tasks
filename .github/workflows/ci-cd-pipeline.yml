@@ -28,7 +28,7 @@ jobs:
 
       - name: Build Docker image
         run: |
-          docker build -t interview-app .
+          docker build -t interview-app ./server
 
       - name: Push image to ECR
         run: |
