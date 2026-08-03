@@ -1,6 +1,3 @@
-# Candidate should fix structure, security, AWS auth, Docker build, ECR push, and deployment logic.
-
-
 name: Deploy Interview App
 
 on:
@@ -11,13 +8,18 @@ on:
 permissions:
   contents: read
 
-# To improve cicd we can implement to use environment variables for AWS credentials and other sensitive information. This will help to avoid hardcoding sensitive data in the workflow file and improve security.
-# env:
-#   AWS_REGION: us-east-1
-#   AWS_ACCOUNT_ID: "670839969318"
-#   ECR_REPOSITORY: interview-app-backend
-#   ECS_CLUSTER: interview-appCluster
-#   CONTAINER_NAME: backend
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: "670839969318"
+
+  ECR_REPOSITORY: interview-app-backend
+
+  ECS_CLUSTER: interview-appCluster
+  ECS_SERVICE: interview-app-backend
+  ECS_TASK_FAMILY: interview-app-backend
+  CONTAINER_NAME: interview-app
+
+  CONTAINER_PORT: "3000"
 
 jobs:
   deploy:
@@ -32,39 +34,140 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
+        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build Docker image
+      - name: Build and push Docker image
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t interview-app:latest ./server/app    
-      
-      - name: Push image to ECR
-        run: |
-          docker tag interview-app:latest 670839969318.dkr.ecr.us-east-1.amazonaws.com/interview-app-backend:${{ github.sha }}
-          docker push 670839969318.dkr.ecr.us-east-1.amazonaws.com/interview-app-backend:${{ github.sha }}
+          set -euo pipefail
 
-      - name: Download Current Task Definition
+          IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+          docker build \
+            --tag "$IMAGE_URI" \
+            ./server/app
+
+          docker push "$IMAGE_URI"
+
+          echo "image=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve task definition
+        id: resolve-task-definition
+        env:
+          ECS_EXECUTION_ROLE_ARN: arn:aws:iam::670839969318:role/ecsTaskExecutionRole
         run: |
-          aws ecs describe-task-definition \
-            --task-definition interview-app-backend \
+          set -euo pipefail
+
+          echo "Checking task-definition family: $ECS_TASK_FAMILY"
+
+          if aws ecs describe-task-definition \
+            --task-definition "$ECS_TASK_FAMILY" \
+            --region "$AWS_REGION" \
             --query taskDefinition \
-            > task-definition.json
+            --output json \
+            > task-definition.json 2>/dev/null; then
 
-      - name: Render New Task Definition
+            echo "Existing task definition found."
+
+          else
+            echo "No existing task definition found."
+            echo "Creating initial task-definition file."
+
+            jq -n \
+              --arg family "$ECS_TASK_FAMILY" \
+              --arg containerName "$CONTAINER_NAME" \
+              --arg image "${{ steps.build-image.outputs.image }}" \
+              --arg executionRoleArn "$ECS_EXECUTION_ROLE_ARN" \
+              --arg region "$AWS_REGION" \
+              --arg logGroup "/ecs/$ECS_TASK_FAMILY" \
+              --argjson containerPort "$CONTAINER_PORT" \
+              '{
+                family: $family,
+                networkMode: "awsvpc",
+                requiresCompatibilities: ["FARGATE"],
+                cpu: "256",
+                memory: "512",
+                executionRoleArn: $executionRoleArn,
+                runtimePlatform: {
+                  operatingSystemFamily: "LINUX",
+                  cpuArchitecture: "X86_64"
+                },
+                containerDefinitions: [
+                  {
+                    name: $containerName,
+                    image: $image,
+                    essential: true,
+                    portMappings: [
+                      {
+                        containerPort: $containerPort,
+                        hostPort: $containerPort,
+                        protocol: "tcp"
+                      }
+                    ],
+                    logConfiguration: {
+                      logDriver: "awslogs",
+                      options: {
+                        "awslogs-create-group": "true",
+                        "awslogs-group": $logGroup,
+                        "awslogs-region": $region,
+                        "awslogs-stream-prefix": "ecs"
+                      }
+                    }
+                  }
+                ]
+              }' > task-definition.json
+          fi
+
+          echo "Task-definition container information:"
+          jq '{
+            family,
+            revision,
+            containers: [
+              .containerDefinitions[] | {
+                name,
+                image,
+                portMappings
+              }
+            ]
+          }' task-definition.json
+
+      - name: Validate container name
+        run: |
+          set -euo pipefail
+
+          if ! jq -e \
+            --arg containerName "$CONTAINER_NAME" \
+            '.containerDefinitions[]
+             | select(.name == $containerName)' \
+            task-definition.json > /dev/null; then
+
+            echo "Container '$CONTAINER_NAME' was not found."
+            echo "Available container names:"
+
+            jq -r '.containerDefinitions[].name' task-definition.json
+
+            exit 1
+          fi
+
+      - name: Render new task definition
         id: task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: task-definition.json
-          container-name: interview-app
-          image: 670839969318.dkr.ecr.us-east-1.amazonaws.com/interview-app-backend:${{ github.sha }}
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.build-image.outputs.image }}
 
-      - name: Deploy Backend to ECS
+      - name: Deploy backend to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.task-def.outputs.task-definition }}
-          service: interview-app-backend
-          cluster: interview-appCluster
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
