@@ -44,7 +44,7 @@ jobs:
 
       - name: Render New Task Definition
         id: task-def
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        uses: aws-actions/amazon-ecs-render-task-definition@v1.0.0
         with:
           task-definition: task-definition.json
           container-name: backend
